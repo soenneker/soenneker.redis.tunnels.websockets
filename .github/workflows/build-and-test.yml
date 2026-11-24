@@ -1,0 +1,58 @@
+name: build-and-test
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE: 'true'
+  PipelineEnvironment: true
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+     redis: 
+       image: redis
+       # Set health checks to wait until redis has started
+       options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+       ports:
+         - 6379:6379
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 11.0.100
+
+      - name: Restore tests
+        run: dotnet restore test/Soenneker.Redis.Tunnels.WebSockets.Tests/Soenneker.Redis.Tunnels.WebSockets.Tests.csproj --verbosity minimal
+
+      - name: Build tests
+        run: dotnet build test/Soenneker.Redis.Tunnels.WebSockets.Tests/Soenneker.Redis.Tunnels.WebSockets.Tests.csproj --configuration Release --no-restore --verbosity minimal
+
+      - name: Test
+        run: dotnet test --project test/Soenneker.Redis.Tunnels.WebSockets.Tests/Soenneker.Redis.Tunnels.WebSockets.Tests.csproj --configuration Release --no-build --no-restore --verbosity minimal
+
+      - name: Pack
+        run: dotnet pack src/Soenneker.Redis.Tunnels.WebSockets/Soenneker.Redis.Tunnels.WebSockets.csproj --configuration Release --no-build --no-restore --output . --verbosity minimal
